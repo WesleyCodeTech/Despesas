@@ -546,7 +546,7 @@ function Dashboard({
 // ─── MONTH RESULT CARD ───────────────────────────────────────────────────────
 
 function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showPlan, setShowPlan }) {
-  const hasPlan = monthPlan.entradaPlans.some(p => p.linked.length > 0) || monthPlan.unlinkedSaidas.length > 0;
+  const hasPlan = monthPlan.entradaPlans.some(p => p.linked.length > 0) || (monthPlan.uncoveredSaidas || []).length > 0;
 
   return (
     <div style={styles.resultCard}>
