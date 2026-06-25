@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
- 
+
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
- 
+
 const CATEGORIES = {
   entrada: [
     { id: "salario",       label: "Salário",       icon: "💼" },
@@ -20,52 +20,52 @@ const CATEGORIES = {
     { id: "outros_saida",label: "Outros",          icon: "➖" },
   ],
 };
- 
+
 const RECURRENCE = [
   { id: "unica",    label: "Única vez" },
   { id: "mensal",   label: "Todo mês"  },
   { id: "semanal",  label: "Toda semana" },
   { id: "parcelado",label: "Parcelado" },
 ];
- 
+
 const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
- 
+
 // ─── UTILS ───────────────────────────────────────────────────────────────────
- 
+
 function formatBRL(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value || 0);
 }
- 
+
 function parseNum(str) {
   if (str === undefined || str === null || str === "") return NaN;
   return parseFloat(String(str).replace(",", "."));
 }
- 
+
 function formatDate(dateStr) {
   if (!dateStr) return "";
   const [y, m, d] = dateStr.split("-");
   return `${d}/${m}/${y}`;
 }
- 
+
 function todayStr() {
   return new Date().toISOString().split("T")[0];
 }
- 
+
 function generateId() {
   return Math.random().toString(36).substr(2, 9);
 }
- 
+
 function loadData() {
   try {
     const saved = localStorage.getItem("finapp_v1");
     return saved ? JSON.parse(saved) : { transactions: [], balance: 0 };
   } catch { return { transactions: [], balance: 0 }; }
 }
- 
+
 function saveData(data) {
   try { localStorage.setItem("finapp_v1", JSON.stringify(data)); } catch {}
 }
- 
+
 function getTransactionsForMonth(transactions, year, month) {
   const results = [];
   for (const t of transactions) {
@@ -108,14 +108,38 @@ function getTransactionsForMonth(transactions, year, month) {
   }
   return results.sort((a, b) => a.displayDate.localeCompare(b.displayDate));
 }
- 
+
 function getCategoryInfo(type, catId) {
   const list = CATEGORIES[type] || [];
   return list.find(c => c.id === catId) || { label: catId || "Geral", icon: "•" };
 }
- 
+
+// Normaliza linkedDebts que podem ser string[] (formato antigo) ou {id,amount}[] (novo)
+function normalizeLinkedDebts(lds, saidaById) {
+  if (!lds || lds.length === 0) return [];
+  return lds.map(d => {
+    if (typeof d === "string") {
+      const exp = saidaById ? saidaById[d] : null;
+      return { id: d, amount: exp ? exp.amount : 0 };
+    }
+    return d;
+  }).filter(d => d && d.id);
+}
+
+// Quanto de cada saída já foi alocado pelas entradas do mês (excluindo a entrada atual)
+function computeAllocatedByOthers(monthEntradas, saidaById, excludeId) {
+  const result = {};
+  for (const e of monthEntradas) {
+    if (e.id === excludeId) continue;
+    for (const ld of normalizeLinkedDebts(e.linkedDebts, saidaById)) {
+      result[ld.id] = (result[ld.id] || 0) + (ld.amount || 0);
+    }
+  }
+  return result;
+}
+
 // ─── ACCUMULATED FORECAST ────────────────────────────────────────────────────
- 
+
 function getAccumulatedForecast(transactions, currentBalance, numMonths = 6) {
   const now = new Date();
   const result = [];
@@ -134,13 +158,13 @@ function getAccumulatedForecast(transactions, currentBalance, numMonths = 6) {
   }
   return result;
 }
- 
+
 // ─── TIPS ENGINE ─────────────────────────────────────────────────────────────
- 
+
 function getTips(monthResult, accumulated, monthSaidas, totalEntradas) {
   const tips = [];
   const savingsRate = totalEntradas > 0 ? (monthResult / totalEntradas) * 100 : 0;
- 
+
   // --- resultado do mês ---
   if (totalEntradas === 0 && monthSaidas.length > 0) {
     tips.push({ icon: "💡", type: "warning",
@@ -168,7 +192,7 @@ function getTips(monthResult, accumulated, monthSaidas, totalEntradas) {
         text: `Sobram ${formatBRL(monthResult)} este mês. Tente chegar a 20% de reserva — faltam ${formatBRL(totalEntradas * 0.2 - monthResult)}.` });
     }
   }
- 
+
   // --- acumulado ---
   if (accumulated < 0) {
     tips.push({ icon: "📉", type: "danger",
@@ -180,12 +204,12 @@ function getTips(monthResult, accumulated, monthSaidas, totalEntradas) {
     tips.push({ icon: "🐷", type: "info",
       text: `${formatBRL(accumulated)} acumulados. Continue poupando — tente montar uma reserva de 3 meses de gastos (${formatBRL(3 * (monthSaidas.reduce((s,t) => s + t.amount, 0)))}).` });
   }
- 
+
   return tips;
 }
- 
+
 // ─── APP ─────────────────────────────────────────────────────────────────────
- 
+
 export default function App() {
   const [view, setView] = useState("dashboard");
   const [transactions, setTransactions] = useState(() => loadData().transactions || []);
@@ -194,13 +218,13 @@ export default function App() {
   const [balanceInput, setBalanceInput]     = useState("");
   const [filterType, setFilterType]         = useState("all");
   const [editingId, setEditingId]           = useState(null);
- 
+
   const now = new Date();
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [viewYear,  setViewYear]  = useState(now.getFullYear());
- 
+
   useEffect(() => { saveData({ transactions, balance }); }, [transactions, balance]);
- 
+
   const emptyForm = {
     type: "saida", description: "", amount: "", date: todayStr(),
     category: "", recurrence: "unica", note: "",
@@ -208,18 +232,18 @@ export default function App() {
     linkedDebts: [],
   };
   const [form, setForm] = useState(emptyForm);
- 
+
   const monthTransactions = useMemo(
     () => getTransactionsForMonth(transactions, viewYear, viewMonth),
     [transactions, viewYear, viewMonth]
   );
- 
+
   const monthEntradas = monthTransactions.filter(t => t.type === "entrada");
   const monthSaidas   = monthTransactions.filter(t => t.type === "saida");
   const totalEntradas = monthEntradas.reduce((s, t) => s + t.amount, 0);
   const totalSaidas   = monthSaidas.reduce((s, t) => s + t.amount, 0);
   const monthResult   = totalEntradas - totalSaidas;
- 
+
   // Carry-over acumulado de todos os meses ANTES do mês visualizado
   const carryOver = useMemo(() => {
     const targetM = viewYear * 12 + viewMonth;
@@ -240,31 +264,44 @@ export default function App() {
     }
     return carry;
   }, [transactions, viewYear, viewMonth]);
- 
+
   const accumulated = monthResult + carryOver;
- 
-  // Plano do mês: quais entradas cobrem quais saídas
+
+  // Plano do mês: quais entradas cobrem quais saídas (com valores parciais)
   const monthPlan = useMemo(() => {
     const saidaById = {};
     for (const t of monthSaidas) saidaById[t.id] = t;
- 
+
     const entradaPlans = monthEntradas.map(e => {
-      const linked      = (e.linkedDebts || []).map(id => saidaById[id]).filter(Boolean);
-      const linkedTotal = linked.reduce((s, t) => s + t.amount, 0);
+      const nlds = normalizeLinkedDebts(e.linkedDebts, saidaById);
+      const linked = nlds.map(ld => {
+        const expense = saidaById[ld.id];
+        return expense ? { ...expense, allocatedAmount: ld.amount } : null;
+      }).filter(Boolean);
+      const linkedTotal = nlds.reduce((s, ld) => s + (ld.amount || 0), 0);
       return { entrada: e, linked, linkedTotal, leftover: e.amount - linkedTotal };
     });
- 
-    const linkedIds    = new Set(monthEntradas.flatMap(e => e.linkedDebts || []));
-    const unlinkedSaidas = monthSaidas.filter(t => !linkedIds.has(t.id));
- 
-    return { entradaPlans, unlinkedSaidas };
+
+    // Calcular o quanto cada saída está alocada no total
+    const totalAllocated = {};
+    for (const e of monthEntradas) {
+      for (const ld of normalizeLinkedDebts(e.linkedDebts, saidaById)) {
+        totalAllocated[ld.id] = (totalAllocated[ld.id] || 0) + (ld.amount || 0);
+      }
+    }
+    // Saídas não totalmente cobertas (com o valor restante)
+    const uncoveredSaidas = monthSaidas
+      .map(s => ({ ...s, remaining: s.amount - (totalAllocated[s.id] || 0) }))
+      .filter(s => s.remaining > 0);
+
+    return { entradaPlans, uncoveredSaidas };
   }, [monthEntradas, monthSaidas]);
- 
+
   const tips = useMemo(
     () => getTips(monthResult, accumulated, monthSaidas, totalEntradas),
     [monthResult, accumulated, monthSaidas, totalEntradas]
   );
- 
+
   const projectedBalance = useMemo(() => {
     const todayISO = todayStr();
     const upcoming = monthTransactions.filter(t => t.displayDate >= todayISO);
@@ -272,16 +309,16 @@ export default function App() {
     for (const t of upcoming) proj += t.type === "entrada" ? t.amount : -t.amount;
     return proj;
   }, [monthTransactions, balance]);
- 
+
   const forecast = useMemo(
     () => getAccumulatedForecast(transactions, balance),
     [transactions, balance]
   );
- 
+
   function handleSave() {
     if (!form.description || !form.date || !form.category) return;
     let amount, totalInstallments = null, purchaseTotal = null;
- 
+
     if (form.recurrence === "parcelado") {
       const n = parseInt(form.totalInstallments, 10);
       if (!n || n < 1) return;
@@ -300,14 +337,14 @@ export default function App() {
       amount = parseNum(form.amount);
       if (isNaN(amount) || amount <= 0) return;
     }
- 
+
     const payload = {
       type: form.type, description: form.description, amount,
       date: form.date, category: form.category, recurrence: form.recurrence,
       note: form.note, totalInstallments, purchaseTotal,
       linkedDebts: form.type === "entrada" ? (form.linkedDebts || []) : [],
     };
- 
+
     if (editingId) {
       setTransactions(prev => prev.map(t => t.id === editingId ? { ...payload, id: editingId } : t));
       setEditingId(null);
@@ -320,9 +357,9 @@ export default function App() {
     setForm(emptyForm);
     setView("dashboard");
   }
- 
+
   function handleDelete(id) { setTransactions(prev => prev.filter(t => t.id !== id)); }
- 
+
   function handleEdit(t) {
     setForm({
       type: t.type, description: t.description, amount: String(t.amount),
@@ -335,18 +372,18 @@ export default function App() {
     setEditingId(t.id);
     setView("add");
   }
- 
+
   function changeMonth(dir) {
     let m = viewMonth + dir, y = viewYear;
     if (m < 0)  { m = 11; y--; }
     if (m > 11) { m = 0;  y++; }
     setViewMonth(m); setViewYear(y);
   }
- 
+
   const filtered = filterType === "all"
     ? monthTransactions
     : monthTransactions.filter(t => t.type === filterType);
- 
+
   return (
     <div style={styles.root}>
       <div style={styles.header}>
@@ -355,7 +392,7 @@ export default function App() {
           <span style={styles.monthLabel}>{MONTHS[viewMonth]}/{viewYear}</span>
         </div>
       </div>
- 
+
       <div style={styles.content}>
         {view === "dashboard" && (
           <Dashboard
@@ -374,7 +411,8 @@ export default function App() {
           <AddForm
             form={form} setForm={setForm} onSave={handleSave}
             onCancel={() => { setForm(emptyForm); setEditingId(null); setView("dashboard"); }}
-            editing={!!editingId} monthSaidas={monthSaidas}
+            editing={!!editingId} editingId={editingId}
+            monthSaidas={monthSaidas} monthEntradas={monthEntradas}
           />
         )}
         {view === "history" && (
@@ -386,7 +424,7 @@ export default function App() {
         )}
         {view === "forecast" && <Forecast forecast={forecast} />}
       </div>
- 
+
       <nav style={styles.nav}>
         {[
           { id: "dashboard", icon: "🏠", label: "Início"   },
@@ -406,9 +444,9 @@ export default function App() {
     </div>
   );
 }
- 
+
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
- 
+
 function Dashboard({
   balance, projectedBalance, totalEntradas, totalSaidas, monthResult,
   carryOver, accumulated, monthPlan, tips,
@@ -419,7 +457,7 @@ function Dashboard({
   const today   = todayStr();
   const upcoming = monthTransactions.filter(t => t.displayDate >= today).slice(0, 5);
   const [showPlan, setShowPlan] = useState(false);
- 
+
   return (
     <div>
       <div style={styles.monthNav}>
@@ -427,7 +465,7 @@ function Dashboard({
         <span style={styles.monthTitle}>{MONTHS[viewMonth]} {viewYear}</span>
         <button style={styles.monthBtn} onClick={() => changeMonth(1)}>›</button>
       </div>
- 
+
       {/* Saldo */}
       <div style={styles.balanceCard}>
         <div style={styles.balanceLabel}>Saldo atual na conta</div>
@@ -455,7 +493,7 @@ function Dashboard({
           </span>
         </div>
       </div>
- 
+
       {/* Resumo 3 cards */}
       <div style={styles.summaryRow}>
         <div style={styles.summaryCard}>
@@ -476,13 +514,13 @@ function Dashboard({
           </div>
         </div>
       </div>
- 
+
       {/* Balanço + carry-over */}
       <MonthResultCard
         monthResult={monthResult} carryOver={carryOver} accumulated={accumulated}
         monthPlan={monthPlan} showPlan={showPlan} setShowPlan={setShowPlan}
       />
- 
+
       {/* Dicas */}
       {tips.length > 0 && (
         <div style={{ marginBottom: 20 }}>
@@ -490,7 +528,7 @@ function Dashboard({
           {tips.map((tip, i) => <TipCard key={i} tip={tip} />)}
         </div>
       )}
- 
+
       {/* Próximos lançamentos */}
       <div style={styles.sectionTitle}>Próximos lançamentos</div>
       {upcoming.length === 0
@@ -504,12 +542,12 @@ function Dashboard({
     </div>
   );
 }
- 
+
 // ─── MONTH RESULT CARD ───────────────────────────────────────────────────────
- 
+
 function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showPlan, setShowPlan }) {
   const hasPlan = monthPlan.entradaPlans.some(p => p.linked.length > 0) || monthPlan.unlinkedSaidas.length > 0;
- 
+
   return (
     <div style={styles.resultCard}>
       <div style={styles.resultCardHeader}>
@@ -520,7 +558,7 @@ function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showP
           </button>
         )}
       </div>
- 
+
       <div style={styles.resultRows}>
         <div style={styles.resultRow}>
           <span style={styles.resultRowLabel}>Resultado do mês</span>
@@ -543,7 +581,7 @@ function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showP
           </span>
         </div>
       </div>
- 
+
       {showPlan && (
         <div style={styles.planSection}>
           {monthPlan.entradaPlans.map((ep, i) => {
@@ -556,10 +594,15 @@ function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showP
                 </div>
                 {ep.linked.length > 0 ? ep.linked.map((s, j) => {
                   const sc = getCategoryInfo("saida", s.category);
+                  const isPartial = s.allocatedAmount < s.amount;
                   return (
                     <div key={s.id + j} style={styles.planLinkedItem}>
                       <span style={{ color: MUTED }}>{sc.icon} {s.description}</span>
-                      <span style={{ color: "#f87171" }}>−{formatBRL(s.amount)}</span>
+                      <span style={{ color: isPartial ? "#fbbf24" : "#f87171", fontSize: 12 }}>
+                        {isPartial
+                          ? `−${formatBRL(s.allocatedAmount)} de ${formatBRL(s.amount)}`
+                          : `−${formatBRL(s.allocatedAmount)}`}
+                      </span>
                     </div>
                   );
                 }) : (
@@ -576,21 +619,31 @@ function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showP
               </div>
             );
           })}
-          {monthPlan.unlinkedSaidas.length > 0 && (
+          {monthPlan.uncoveredSaidas.length > 0 && (
             <div style={styles.planUnlinked}>
-              <div style={{ color: MUTED, fontSize: 12, marginBottom: 8 }}>⚠️ Gastos sem entrada vinculada:</div>
-              {monthPlan.unlinkedSaidas.map((s, i) => {
+              <div style={{ color: MUTED, fontSize: 12, marginBottom: 8 }}>⚠️ Contas ainda sem cobertura total:</div>
+              {monthPlan.uncoveredSaidas.map((s, i) => {
                 const sc = getCategoryInfo("saida", s.category);
+                const isPartial = s.remaining < s.amount;
                 return (
                   <div key={s.id + i} style={styles.planLinkedItem}>
-                    <span style={{ color: MUTED }}>{sc.icon} {s.description}</span>
-                    <span style={{ color: "#f87171" }}>−{formatBRL(s.amount)}</span>
+                    <div>
+                      <span style={{ color: MUTED }}>{sc.icon} {s.description}</span>
+                      {isPartial && (
+                        <span style={{ fontSize: 11, color: "#fbbf24", marginLeft: 6 }}>
+                          (faltam {formatBRL(s.remaining)})
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ color: isPartial ? "#fbbf24" : "#f87171" }}>
+                      −{formatBRL(s.remaining)}
+                    </span>
                   </div>
                 );
               })}
             </div>
           )}
-          {monthPlan.entradaPlans.length === 0 && monthPlan.unlinkedSaidas.length === 0 && (
+          {monthPlan.entradaPlans.length === 0 && monthPlan.uncoveredSaidas.length === 0 && (
             <div style={{ color: MUTED, fontSize: 13, padding: "8px 0" }}>
               Nenhum lançamento cadastrado neste mês.
             </div>
@@ -600,9 +653,9 @@ function MonthResultCard({ monthResult, carryOver, accumulated, monthPlan, showP
     </div>
   );
 }
- 
+
 // ─── TIP CARD ────────────────────────────────────────────────────────────────
- 
+
 function TipCard({ tip }) {
   const colors = {
     success: { bg: "rgba(34,197,94,0.1)",   border: "rgba(34,197,94,0.3)",   text: "#22c55e" },
@@ -619,18 +672,18 @@ function TipCard({ tip }) {
     </div>
   );
 }
- 
+
 // ─── ADD FORM ────────────────────────────────────────────────────────────────
- 
-function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
+
+function AddForm({ form, setForm, onSave, onCancel, editing, editingId, monthSaidas, monthEntradas }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const cats = CATEGORIES[form.type] || [];
- 
+
   const isParcelado   = form.recurrence === "parcelado";
   const totalN        = parseInt(form.totalInstallments, 10);
   const purchaseTotalNum = parseNum(form.purchaseTotal);
   const amountNum     = parseNum(form.amount);
- 
+
   let preview = null;
   if (isParcelado && totalN > 0) {
     if (form.installmentMode === "total" && !isNaN(purchaseTotalNum) && purchaseTotalNum > 0)
@@ -638,20 +691,47 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
     else if (form.installmentMode !== "total" && !isNaN(amountNum) && amountNum > 0)
       preview = `Total da compra: ${formatBRL(amountNum * totalN)} em ${totalN}x`;
   }
- 
-  // Debt linker
-  const linkedDebts = form.linkedDebts || [];
-  const toggleDebt  = (id) => set("linkedDebts",
-    linkedDebts.includes(id) ? linkedDebts.filter(d => d !== id) : [...linkedDebts, id]
+
+  // ── Debt linker ───────────────────────────────────────────────────────────
+  const saidaById = useMemo(() => {
+    const m = {};
+    for (const s of monthSaidas) m[s.id] = s;
+    return m;
+  }, [monthSaidas]);
+
+  // Quanto já está alocado por OUTRAS entradas (não a que está sendo editada)
+  const allocatedByOthers = useMemo(
+    () => computeAllocatedByOthers(monthEntradas, saidaById, editingId),
+    [monthEntradas, saidaById, editingId]
   );
-  const linkedTotal = monthSaidas.filter(s => linkedDebts.includes(s.id)).reduce((sum, s) => sum + s.amount, 0);
-  const incomeAmt   = isParcelado
+
+  // Saídas com saldo disponível (não cobertas por outras entradas)
+  const availableSaidas = monthSaidas
+    .map(s => ({ ...s, remaining: s.amount - (allocatedByOthers[s.id] || 0) }))
+    .filter(s => s.remaining > 0.005);
+
+  // linkedDebts agora é [{id, amount}]
+  const linkedDebts = form.linkedDebts || [];
+
+  const toggleDebt = (s) => {
+    const already = linkedDebts.find(ld => ld.id === s.id);
+    if (already) {
+      set("linkedDebts", linkedDebts.filter(ld => ld.id !== s.id));
+    } else {
+      set("linkedDebts", [...linkedDebts, { id: s.id, amount: s.remaining }]);
+    }
+  };
+
+  const linkedTotal = linkedDebts.reduce((sum, ld) => sum + (ld.amount || 0), 0);
+
+  const incomeAmt = isParcelado
     ? (form.installmentMode === "total"
         ? (!isNaN(purchaseTotalNum) && totalN > 0 ? purchaseTotalNum / totalN : 0)
         : (!isNaN(amountNum) ? amountNum : 0))
     : (!isNaN(amountNum) ? amountNum : 0);
   const leftover = incomeAmt - linkedTotal;
- 
+  // ─────────────────────────────────────────────────────────────────────────
+
   const canSave = (() => {
     if (!form.description || !form.date || !form.category) return false;
     if (isParcelado) {
@@ -662,11 +742,11 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
     }
     return !isNaN(amountNum) && amountNum > 0;
   })();
- 
+
   return (
     <div>
       <div style={styles.formTitle}>{editing ? "Editar lançamento" : "Novo lançamento"}</div>
- 
+
       <div style={styles.typeToggle}>
         <button style={{ ...styles.typeBtn, ...(form.type === "entrada" ? styles.typeBtnEntrada : styles.typeBtnOff) }}
           onClick={() => { set("type", "entrada"); set("category", ""); set("linkedDebts", []); }}>
@@ -675,11 +755,11 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
           onClick={() => { set("type", "saida"); set("category", ""); set("linkedDebts", []); }}>
           📤 Gasto</button>
       </div>
- 
+
       <label style={styles.label}>Descrição</label>
       <input style={styles.input} placeholder="Ex: Salário, Aluguel, Supermercado..."
         value={form.description} onChange={e => set("description", e.target.value)} />
- 
+
       {!isParcelado && (
         <>
           <label style={styles.label}>Valor (R$)</label>
@@ -687,10 +767,10 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
             onChange={e => set("amount", e.target.value)} inputMode="decimal" />
         </>
       )}
- 
+
       <label style={styles.label}>{isParcelado ? "Data da 1ª parcela" : "Data"}</label>
       <input style={styles.input} type="date" value={form.date} onChange={e => set("date", e.target.value)} />
- 
+
       <label style={styles.label}>Repetição</label>
       <div style={styles.recurrenceRow}>
         {RECURRENCE.map(r => (
@@ -700,7 +780,7 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
             {r.label}</button>
         ))}
       </div>
- 
+
       {isParcelado && (
         <div style={styles.installmentBox}>
           <label style={styles.label}>Número de parcelas</label>
@@ -728,7 +808,7 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
           {preview && <div style={styles.installmentPreview}>🧮 {preview}</div>}
         </div>
       )}
- 
+
       <label style={styles.label}>Categoria</label>
       <div style={styles.catGrid}>
         {cats.map(c => (
@@ -740,59 +820,76 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
           </button>
         ))}
       </div>
- 
+
       {/* Vinculador de dívidas — só para entradas */}
       {form.type === "entrada" && (
         <div style={styles.debtLinkerBox}>
           <div style={styles.debtLinkerTitle}>💳 Quais contas vai pagar com essa entrada?</div>
-          {monthSaidas.length === 0 ? (
+
+          {availableSaidas.length === 0 && monthSaidas.length === 0 && (
             <div style={{ color: MUTED, fontSize: 13, padding: "10px 0 4px" }}>
               Nenhum gasto cadastrado neste mês ainda. Adicione seus gastos primeiro.
             </div>
-          ) : (
-            <>
-              {monthSaidas.map((s, i) => {
-                const cat     = getCategoryInfo("saida", s.category);
-                const checked = linkedDebts.includes(s.id);
-                return (
-                  <div key={s.id + i}
-                    style={{ ...styles.debtItem, ...(checked ? styles.debtItemChecked : {}) }}
-                    onClick={() => toggleDebt(s.id)}>
-                    <span style={styles.debtCheckbox}>{checked ? "✅" : "⬜"}</span>
-                    <span style={styles.debtDesc}>{cat.icon} {s.description}</span>
-                    <span style={{ color: "#f87171", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
-                      {formatBRL(s.amount)}
-                    </span>
-                  </div>
-                );
-              })}
-              <div style={styles.debtSummary}>
-                <div style={styles.debtSummaryRow}>
-                  <span style={{ color: MUTED, fontSize: 13 }}>Total da entrada</span>
-                  <span style={{ color: "#22c55e", fontWeight: 700 }}>{formatBRL(incomeAmt)}</span>
+          )}
+
+          {availableSaidas.length === 0 && monthSaidas.length > 0 && (
+            <div style={{ color: "#22c55e", fontSize: 13, padding: "10px 0 4px" }}>
+              ✅ Todas as contas deste mês já estão cobertas pelas entradas anteriores!
+            </div>
+          )}
+
+          {availableSaidas.map((s, i) => {
+            const cat      = getCategoryInfo("saida", s.category);
+            const linked   = linkedDebts.find(ld => ld.id === s.id);
+            const checked  = !!linked;
+            const isPartial = s.remaining < s.amount;
+            return (
+              <div key={s.id + i}
+                style={{ ...styles.debtItem, ...(checked ? styles.debtItemChecked : {}) }}
+                onClick={() => toggleDebt(s)}>
+                <span style={styles.debtCheckbox}>{checked ? "✅" : "⬜"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={styles.debtDesc}>{cat.icon} {s.description}</div>
+                  {isPartial && (
+                    <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 2 }}>
+                      ⚠️ Faltam {formatBRL(s.remaining)} de {formatBRL(s.amount)}
+                    </div>
+                  )}
                 </div>
-                <div style={styles.debtSummaryRow}>
-                  <span style={{ color: MUTED, fontSize: 13 }}>Contas vinculadas</span>
-                  <span style={{ color: "#f87171", fontWeight: 700 }}>−{formatBRL(linkedTotal)}</span>
-                </div>
-                <div style={{ ...styles.debtSummaryRow, borderTop: `1px solid ${SURFACE2}`, paddingTop: 8, marginTop: 6 }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>
-                    {leftover >= 0 ? "✅ Vai sobrar" : "⚠️ Vai faltar"}
-                  </span>
-                  <span style={{ color: leftover >= 0 ? "#22c55e" : "#f87171", fontWeight: 800, fontSize: 18 }}>
-                    {formatBRL(Math.abs(leftover))}
-                  </span>
-                </div>
+                <span style={{ color: isPartial ? "#fbbf24" : "#f87171", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", marginLeft: 8 }}>
+                  {formatBRL(s.remaining)}
+                </span>
               </div>
-            </>
+            );
+          })}
+
+          {availableSaidas.length > 0 && (
+            <div style={styles.debtSummary}>
+              <div style={styles.debtSummaryRow}>
+                <span style={{ color: MUTED, fontSize: 13 }}>Total da entrada</span>
+                <span style={{ color: "#22c55e", fontWeight: 700 }}>{formatBRL(incomeAmt)}</span>
+              </div>
+              <div style={styles.debtSummaryRow}>
+                <span style={{ color: MUTED, fontSize: 13 }}>Contas vinculadas</span>
+                <span style={{ color: "#f87171", fontWeight: 700 }}>−{formatBRL(linkedTotal)}</span>
+              </div>
+              <div style={{ ...styles.debtSummaryRow, borderTop: `1px solid ${SURFACE2}`, paddingTop: 8, marginTop: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>
+                  {leftover >= 0 ? "✅ Vai sobrar" : "⚠️ Vai faltar"}
+                </span>
+                <span style={{ color: leftover >= 0 ? "#22c55e" : "#f87171", fontWeight: 800, fontSize: 18 }}>
+                  {formatBRL(Math.abs(leftover))}
+                </span>
+              </div>
+            </div>
           )}
         </div>
       )}
- 
+
       <label style={styles.label}>Observação (opcional)</label>
       <input style={styles.input} placeholder="Anotação extra..." value={form.note}
         onChange={e => set("note", e.target.value)} />
- 
+
       <div style={styles.formBtns}>
         <button style={styles.cancelBtn} onClick={onCancel}>Cancelar</button>
         <button style={{ ...styles.saveBtn, opacity: canSave ? 1 : 0.4 }} onClick={canSave ? onSave : undefined}>
@@ -802,9 +899,9 @@ function AddForm({ form, setForm, onSave, onCancel, editing, monthSaidas }) {
     </div>
   );
 }
- 
+
 // ─── HISTORY ─────────────────────────────────────────────────────────────────
- 
+
 function History({ filterType, setFilterType, filtered, onEdit, onDelete, viewMonth, viewYear, changeMonth }) {
   return (
     <div>
@@ -831,12 +928,12 @@ function History({ filterType, setFilterType, filtered, onEdit, onDelete, viewMo
     </div>
   );
 }
- 
+
 // ─── FORECAST ────────────────────────────────────────────────────────────────
- 
+
 function Forecast({ forecast }) {
   const maxVal = Math.max(...forecast.map(f => Math.max(f.entradas, f.saidas)), 1);
- 
+
   return (
     <div>
       <div style={styles.formTitle}>Previsão — próximos 6 meses</div>
@@ -878,15 +975,15 @@ function Forecast({ forecast }) {
     </div>
   );
 }
- 
+
 // ─── TX ROW ──────────────────────────────────────────────────────────────────
- 
+
 function TxRow({ t, onEdit, onDelete, showDate }) {
   const cat       = getCategoryInfo(t.type, t.category);
   const [open, setOpen] = useState(false);
   const isParcelado = t.recurrence === "parcelado";
   const hasLinked   = t.type === "entrada" && (t.linkedDebts || []).length > 0;
- 
+
   return (
     <div style={styles.txRow} onClick={() => setOpen(o => !o)}>
       <div style={styles.txMain}>
@@ -921,9 +1018,9 @@ function TxRow({ t, onEdit, onDelete, showDate }) {
     </div>
   );
 }
- 
+
 // ─── STYLES ──────────────────────────────────────────────────────────────────
- 
+
 const BRAND      = "#6366f1";
 const BRAND_DARK = "#4f46e5";
 const BG         = "#0f0f13";
@@ -931,7 +1028,7 @@ const SURFACE    = "#1a1a24";
 const SURFACE2   = "#22223a";
 const TEXT       = "#f1f1f5";
 const MUTED      = "#8888a8";
- 
+
 const styles = {
   root: { fontFamily: "'Inter', system-ui, sans-serif", background: BG, minHeight: "100dvh", color: TEXT, display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", position: "relative" },
   header: { background: SURFACE, borderBottom: `1px solid ${SURFACE2}`, padding: "14px 20px", position: "sticky", top: 0, zIndex: 10 },
@@ -1043,3 +1140,5 @@ const styles = {
   forecastBarTitle: { fontSize: 9, color: MUTED },
   forecastResult: { fontSize: 15, fontWeight: 800 },
 };
+
+
