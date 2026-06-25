@@ -1023,11 +1023,11 @@ function TxRow({ t, onEdit, onDelete, showDate }) {
 
 const BRAND      = "#6366f1";
 const BRAND_DARK = "#4f46e5";
-const BG         = "#0f0f13";
-const SURFACE    = "#1a1a24";
-const SURFACE2   = "#22223a";
-const TEXT       = "#f1f1f5";
-const MUTED      = "#8888a8";
+const BG         = "#f0f0f8";
+const SURFACE    = "#ffffff";
+const SURFACE2   = "#e2e2f0";
+const TEXT       = "#1a1a2e";
+const MUTED      = "#7070a0";
 
 const styles = {
   root: { fontFamily: "'Inter', system-ui, sans-serif", background: BG, minHeight: "100dvh", color: TEXT, display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", position: "relative" },
@@ -1058,14 +1058,14 @@ const styles = {
   projectedLabel: { fontSize: 12, color: "rgba(255,255,255,0.7)" },
   projectedValue: { fontSize: 16, fontWeight: 700 },
   summaryRow: { display: "flex", gap: 10, marginBottom: 16 },
-  summaryCard: { flex: 1, background: SURFACE, borderRadius: 12, padding: "12px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
+  summaryCard: { flex: 1, background: SURFACE, borderRadius: 12, padding: "12px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" },
   summaryIcon: { fontSize: 20 },
   summaryLabel: { fontSize: 11, color: MUTED },
   summaryValue: { fontSize: 14, fontWeight: 700 },
   sectionTitle: { fontSize: 13, fontWeight: 700, color: MUTED, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   emptyMsg: { color: MUTED, textAlign: "center", padding: "30px 0", fontSize: 14 },
   txList: { display: "flex", flexDirection: "column", gap: 8 },
-  txRow: { background: SURFACE, borderRadius: 12, padding: "12px 14px", cursor: "pointer" },
+  txRow: { background: SURFACE, borderRadius: 12, padding: "12px 14px", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" },
   txMain: { display: "flex", alignItems: "center", gap: 12 },
   txIcon: { fontSize: 22, width: 36, textAlign: "center" },
   txInfo: { flex: 1, minWidth: 0 },
@@ -1078,7 +1078,7 @@ const styles = {
   txEditBtn: { background: SURFACE2, border: "none", color: TEXT, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 },
   txDelBtn: { background: "rgba(239,68,68,0.15)", border: "none", color: "#f87171", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13 },
   // Result Card
-  resultCard: { background: SURFACE, borderRadius: 14, padding: "14px 16px", marginBottom: 16 },
+  resultCard: { background: SURFACE, borderRadius: 14, padding: "14px 16px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" },
   resultCardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   resultCardTitle: { fontWeight: 700, fontSize: 14 },
   planToggleBtn: { background: "rgba(99,102,241,0.15)", border: `1px solid ${BRAND}`, color: BRAND, borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700 },
@@ -1109,7 +1109,7 @@ const styles = {
   typeBtnSaida: { background: "rgba(248,113,113,0.2)", color: "#f87171", border: "2px solid #f87171" },
   typeBtnOff: { background: SURFACE, color: MUTED, border: "2px solid transparent" },
   label: { display: "block", fontSize: 12, color: MUTED, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.6 },
-  input: { width: "100%", background: SURFACE, border: `1px solid ${SURFACE2}`, borderRadius: 10, padding: "12px 14px", color: TEXT, fontSize: 15, marginBottom: 14, outline: "none", boxSizing: "border-box" },
+  input: { width: "100%", background: "#f7f7fc", border: `1.5px solid ${SURFACE2}`, borderRadius: 10, padding: "12px 14px", color: TEXT, fontSize: 15, marginBottom: 14, outline: "none", boxSizing: "border-box" },
   recurrenceRow: { display: "flex", gap: 8, marginBottom: 14 },
   recBtn: { flex: 1, padding: "8px 4px", borderRadius: 8, border: `1px solid ${SURFACE2}`, background: SURFACE, color: MUTED, cursor: "pointer", fontSize: 11, fontWeight: 600 },
   recBtnActive: { background: "rgba(99,102,241,0.2)", color: BRAND, border: `1px solid ${BRAND}` },
